@@ -1,13 +1,16 @@
 import argparse
 import time
 import subprocess
+import os
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description="Update smart bulbs with rotary value brightness and on/off state.")
 parser.add_argument("--file", type=str, required=True, help="Path to the rotary value output file.")
 parser.add_argument("--bulbs", type=str, nargs='+', required=True, help="List of smart bulb IP addresses.")
-parser.add_argument("--interval", "-n", type=int, default=5, help="Update interval in seconds (default: 5 seconds).")
 args = parser.parse_args()
+
+# Global flag to track if the latest update has been sent
+in_sync = True
 
 # Function to set brightness using python-kasa
 def set_brightness(ip, brightness):
@@ -54,27 +57,47 @@ def read_latest_value(file_path):
 
 # Main loop
 try:
-    print(f"[INFO] Starting lightbulb updater with interval {args.interval} seconds.")
-    print(f"[INFO] Watching file: {args.file}")
+    print(f"[INFO] Starting lightbulb updater, watching for changes in {args.file}.")
     print(f"[INFO] Updating bulbs: {', '.join(args.bulbs)}")
 
+    last_mod_time = 0
+    last_update_time = 0
+
     while True:
-        # Read the latest rotary value and on/off state before each update
-        latest_brightness, power_state = read_latest_value(args.file)
+        try:
+            current_mod_time = os.path.getmtime(args.file)
 
-        if latest_brightness is not None and power_state is not None:
-            # Clamp the brightness value to 1-100 (brightness of 1 when off assumed)
-            brightness = max(1, min(100, latest_brightness)) if power_state else 1
+            # If the file has been modified, mark as out of sync
+            if current_mod_time != last_mod_time:
+                last_mod_time = current_mod_time
+                in_sync = False
+                last_update_time = time.time()
 
-            # Update all bulbs
-            for bulb_ip in args.bulbs:
-                set_power(bulb_ip, power_state)
-                if power_state:  # Only set brightness if the bulb is on
-                    set_brightness(bulb_ip, brightness)
-        else:
-            print("[WARN] No valid rotary value or power state found, skipping this update.")
+            # Check if it's time to send an update
+            if not in_sync and (time.time() - last_update_time) > 1:  # 1000ms threshold
+                # Read the latest rotary value and on/off state
+                latest_brightness, power_state = read_latest_value(args.file)
 
-        time.sleep(args.interval)
+                if latest_brightness is not None and power_state is not None:
+                    # Clamp the brightness value to 1-100 (brightness of 1 when off assumed)
+                    brightness = max(1, min(100, latest_brightness)) if power_state else 1
+
+                    # Update all bulbs
+                    for bulb_ip in args.bulbs:
+                        set_power(bulb_ip, power_state)
+                        if power_state:  # Only set brightness if the bulb is on
+                            set_brightness(bulb_ip, brightness)
+
+                    # Mark as in sync
+                    in_sync = True
+                else:
+                    print("[WARN] No valid rotary value or power state found, skipping this update.")
+
+            time.sleep(0.1)  # Check for updates frequently without excessive CPU usage
+
+        except Exception as e:
+            print(f"[ERROR] Unexpected error: {e}")
+            time.sleep(1)
 
 except KeyboardInterrupt:
     print("[INFO] Exiting lightbulb updater.")
