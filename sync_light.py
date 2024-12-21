@@ -91,7 +91,8 @@ try:
                     # Mark as in sync
                     in_sync = True
                 else:
-                    print("[WARN] No valid rotary value or power state found, skipping this update.")
+                    pass
+                    #print("[WARN] No valid rotary value or power state found, skipping this update.")
 
             time.sleep(0.1)  # Check for updates frequently without excessive CPU usage
 
