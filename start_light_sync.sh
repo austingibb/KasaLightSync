@@ -1,0 +1,1 @@
+python sync_light.py --file ../IotRotaryEncoder/output/rotary_values.txt --bulbs 10.10.10.54 -n 2
